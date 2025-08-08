@@ -11,12 +11,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 RUN playwright install --with-deps chromium
 
+RUN useradd -m -u 1000 user && \
+    mkdir -p /app/output /app/tmp_brat && \
+    chown -R user:user /app && \
+    chmod -R 777 /app/output /app/tmp_brat
 
-COPY . .
+USER user
 
+COPY --chown=user . .
 
 EXPOSE 7860
-
 
 CMD ["python", "run.py"]
 
