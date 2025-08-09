@@ -23,4 +23,3 @@ COPY --chown=user . .
 EXPOSE 7860
 
 CMD ["python", "run.py"]
-

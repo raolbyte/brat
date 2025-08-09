@@ -3,7 +3,6 @@ import uvicorn
 from main import app
 
 if __name__ == "__main__":
-    
     subprocess.run(["playwright", "install", "chromium"], check=True)
     uvicorn.run(
         app,
@@ -12,6 +11,3 @@ if __name__ == "__main__":
         proxy_headers=True,
         forwarded_allow_ips="*"
     )
-
-
-  

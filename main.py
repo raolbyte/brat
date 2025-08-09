@@ -5,15 +5,15 @@ import os, uuid, shutil, asyncio, time, stat
 from collections import defaultdict
 
 app = FastAPI(
-    title="BRAT Generator API",
-    description="API untuk membuat gambar & video teks gaya BRAT.",
+    title="Brat Generator By RaolByte",
+    description="API for generating BRAT-style text images & videos.",
     version="1.0.1",
 )
 
 def _ensure_dir(path: str) -> str:
     """
-    Pastikan dir bisa dibuat & ditulis. Jika gagal, fallback ke /tmp.
-    Set permission 0777 agar aman di container non-root.
+    Ensures the directory can be created and written to. If it fails, falls back to /tmp.
+    Sets 0777 permissions for safety in non-root containers.
     """
     try:
         os.makedirs(path, exist_ok=True)
@@ -28,15 +28,14 @@ def _ensure_dir(path: str) -> str:
 OUTPUT_DIR = _ensure_dir(os.environ.get("OUTPUT_DIR", os.path.join(os.getcwd(), "output")))
 TMP_DIR    = _ensure_dir(os.environ.get("TMP_DIR",     os.path.join(os.getcwd(), "tmp_brat")))
 
-REQUEST_LIMIT = 10   
-TIME_WINDOW   = 60   
-BAN_DURATION  = 300  
+REQUEST_LIMIT = 10   # Max requests allowed
+TIME_WINDOW   = 60   # Time window in seconds (1 minute)
+BAN_DURATION  = 300  # Ban duration in seconds (5 minutes)
 
 request_logs: dict[str, list[float]] = defaultdict(list)
 banned_ips: dict[str, float] = {}
 
 def get_client_ip(request: Request) -> str:
-    
     cf = request.headers.get("CF-Connecting-IP")
     if cf:
         return cf.strip()
@@ -54,7 +53,7 @@ async def anti_ddos_middleware(request: Request, call_next):
         if now < banned_ips[ip]:
             return JSONResponse(
                 status_code=429,
-                content={"error": "IP diblokir 5 menit karena terlalu banyak request."},
+                content={"error": "IP is blocked for 5 minutes due to too many requests."},
             )
         else:
             del banned_ips[ip]
@@ -67,7 +66,7 @@ async def anti_ddos_middleware(request: Request, call_next):
         banned_ips[ip] = now + BAN_DURATION
         return JSONResponse(
             status_code=429,
-            content={"error": "Terlalu banyak request. IP diblokir 5 menit."},
+            content={"error": "Too many requests. IP is blocked for 5 minutes."},
         )
 
     return await call_next(request)
@@ -79,28 +78,26 @@ async def delete_file_after_delay(filepath: str, delay: int = 600):
         if os.path.exists(filepath):
             os.remove(filepath)
     except Exception:
-        pass  
+        pass
     
-@app.get("/maker/brat", tags=["maker"], summary="Generate gambar teks BRAT")
+@app.get("/maker/brat", tags=["maker"], summary="Generate BRAT text image")
 async def generate_brat(
     request: Request,
-    text: str = Query(..., description="Teks untuk disisipkan di gambar BRAT"),
-    background: str | None = Query(None, description="Warna latar (misal: #000000)"),
-    color: str | None = Query(None, description="Warna teks (misal: #FFFFFF)"),
+    text: str = Query(..., description="Text to be inserted into the BRAT image"),
+    background: str | None = Query(None, description="Background color (e.g., #000000)"),
+    color: str | None = Query(None, description="Text color (e.g., #FFFFFF)"),
 ):
     text = (text or "").strip()
     if not text:
-        return JSONResponse(status_code=400, content={"error": "Teks tidak boleh kosong."})
+        return JSONResponse(status_code=400, content={"error": "Text cannot be empty."})
 
     try:
         async with async_playwright() as p:
-            
             browser = await p.chromium.launch(args=["--no-sandbox"])
             context = await browser.new_context(viewport={"width": 1536, "height": 695})
             page = await context.new_page()
             await page.goto("https://www.bratgenerator.com/", wait_until="domcontentloaded")
 
-            
             try:
                 await page.click("text=Accept", timeout=3000)
             except Exception:
@@ -119,16 +116,16 @@ async def generate_brat(
                 {"background": background, "color": color},
             )
 
-            await asyncio.sleep(0.5)  
+            await asyncio.sleep(0.5)
 
             element = await page.query_selector("#textOverlay")
             if not element:
                 await browser.close()
-                return JSONResponse(status_code=500, content={"error": "Elemen target tidak ditemukan."})
+                return JSONResponse(status_code=500, content={"error": "Target element not found."})
             box = await element.bounding_box()
             if not box:
                 await browser.close()
-                return JSONResponse(status_code=500, content={"error": "Gagal membaca bounding box elemen."})
+                return JSONResponse(status_code=500, content={"error": "Failed to read element bounding box."})
 
             filename = f"brat_{uuid.uuid4().hex[:8]}.png"
             filepath = os.path.join(OUTPUT_DIR, filename)
@@ -147,22 +144,22 @@ async def generate_brat(
         return {"status": "success", "image_url": f"{base_url}/download/file/{filename}"}
 
     except Exception as e:
-        return JSONResponse(status_code=500, content={"error": f"Gagal membuat gambar: {str(e)}"})
+        return JSONResponse(status_code=500, content={"error": f"Failed to generate image: {str(e)}"})
 
-@app.get("/maker/bratvid", tags=["maker"], summary="Buat video animasi dari teks BRAT")
+@app.get("/maker/bratvid", tags=["maker"], summary="Create animated video from BRAT text")
 async def generate_brat_video(
     request: Request,
-    text: str = Query(..., description="Kalimat yang akan dianimasikan (dipisah spasi)"),
-    background: str | None = Query(None, description="Warna latar (misal: #000000)"),
-    color: str | None = Query(None, description="Warna teks (misal: #FFFFFF)"),
+    text: str = Query(..., description="Sentence to be animated (space-separated)"),
+    background: str | None = Query(None, description="Background color (e.g., #000000)"),
+    color: str | None = Query(None, description="Text color (e.g., #FFFFFF)"),
 ):
     text = (text or "").strip()
     if not text:
-        return JSONResponse(status_code=400, content={"error": "Teks tidak boleh kosong."})
+        return JSONResponse(status_code=400, content={"error": "Text cannot be empty."})
 
     words = text.split()
     if not words:
-        return JSONResponse(status_code=400, content={"error": "Teks harus mengandung minimal satu kata."})
+        return JSONResponse(status_code=400, content={"error": "Text must contain at least one word."})
 
     temp_dir = _ensure_dir(os.path.join(TMP_DIR, str(uuid.uuid4())))
 
@@ -201,13 +198,13 @@ async def generate_brat_video(
                     await context.close()
                     await browser.close()
                     shutil.rmtree(temp_dir, ignore_errors=True)
-                    return JSONResponse(status_code=500, content={"error": "Elemen target tidak ditemukan."})
+                    return JSONResponse(status_code=500, content={"error": "Target element not found."})
                 box = await element.bounding_box()
                 if not box:
                     await context.close()
                     await browser.close()
                     shutil.rmtree(temp_dir, ignore_errors=True)
-                    return JSONResponse(status_code=500, content={"error": "Gagal membaca bounding box elemen."})
+                    return JSONResponse(status_code=500, content={"error": "Failed to read element bounding box."})
 
                 screenshot = await page.screenshot(
                     clip={"x": box["x"], "y": box["y"], "width": 500, "height": 440}
@@ -219,7 +216,7 @@ async def generate_brat_video(
             await context.close()
             await browser.close()
 
-        # Render video dengan ffmpeg
+        # Render video with ffmpeg
         output_filename = f"bratvid_{uuid.uuid4().hex[:8]}.mp4"
         output_path = os.path.join(OUTPUT_DIR, output_filename)
 
@@ -257,7 +254,7 @@ async def generate_brat_video(
 async def download_file(filename: str):
     filepath = os.path.join(OUTPUT_DIR, filename)
     if not os.path.exists(filepath):
-        return JSONResponse(status_code=404, content={"error": "File tidak ditemukan"})
+        return JSONResponse(status_code=404, content={"error": "File not found"})
         
     with open(filepath, "rb") as f:
         data = f.read()
@@ -266,4 +263,3 @@ async def download_file(filename: str):
 @app.get("/")
 async def root():
     return {"status": "ok", "service": "brat-generator", "output_dir": OUTPUT_DIR, "tmp_dir": TMP_DIR}
-    
